@@ -41,7 +41,7 @@ TOMTOM_TRAFFIC_CONFIG = {
 }
 
 SIMULATED_BUSES_ENABLED = False
-MONITORED_ROUTES = None
+MONITORED_ROUTES = ["72"]  # Only track Route 72: Temple Meads <-> Frenchay
 
 BRISTOL_BOUNDS = {
     "min_latitude": 51.30,
@@ -50,6 +50,8 @@ BRISTOL_BOUNDS = {
     "max_longitude": -2.40
 }
 
+# Route 72: Temple Meads (Bristol) <-> UWE Frenchay Campus
+# This route serves the key corridor between Temple Meads station and UWE
 TRANSIT_STATIONS = {
     "STATION_TM01": {
         "display_name": "Temple Meads Station",
@@ -106,131 +108,21 @@ TRANSIT_STATIONS = {
         "atco_reference": "01000057001",
         "serving_route": "72",
         "sequence_number": 8
-    },
-    "STATION_N1_01": {
-        "display_name": "Cribbs Causeway",
-        "position": {"lat": 51.5250, "lon": -2.6100},
-        "atco_reference": "01000055201",
-        "serving_route": "N1",
-        "sequence_number": 1
-    },
-    "STATION_N1_02": {
-        "display_name": "Southmead",
-        "position": {"lat": 51.5000, "lon": -2.6000},
-        "atco_reference": "01000055101",
-        "serving_route": "N1",
-        "sequence_number": 2
-    },
-    "STATION_N1_03": {
-        "display_name": "Filton Avenue",
-        "position": {"lat": 51.4850, "lon": -2.5950},
-        "atco_reference": "01000045801",
-        "serving_route": "N1",
-        "sequence_number": 3
-    },
-    "STATION_N1_04": {
-        "display_name": "Gloucester Road North",
-        "position": {"lat": 51.4700, "lon": -2.5920},
-        "atco_reference": "01000046801",
-        "serving_route": "N1",
-        "sequence_number": 4
-    },
-    "STATION_N1_05": {
-        "display_name": "Broadmead",
-        "position": {"lat": 51.4560, "lon": -2.5850},
-        "atco_reference": "01000588101",
-        "serving_route": "N1",
-        "sequence_number": 5
-    },
-    "STATION_N1_06": {
-        "display_name": "City Centre (Colston Avenue)",
-        "position": {"lat": 51.4545, "lon": -2.5950},
-        "atco_reference": "01000002401",
-        "serving_route": "N1",
-        "sequence_number": 6
-    },
-    "STATION_N86_01": {
-        "display_name": "Hengrove Park",
-        "position": {"lat": 51.4200, "lon": -2.5950},
-        "atco_reference": "01000048101",
-        "serving_route": "N86",
-        "sequence_number": 1
-    },
-    "STATION_N86_02": {
-        "display_name": "Whitchurch",
-        "position": {"lat": 51.4280, "lon": -2.6000},
-        "atco_reference": "01000062301",
-        "serving_route": "N86",
-        "sequence_number": 2
-    },
-    "STATION_N86_03": {
-        "display_name": "Knowle",
-        "position": {"lat": 51.4350, "lon": -2.5880},
-        "atco_reference": "01000050201",
-        "serving_route": "N86",
-        "sequence_number": 3
-    },
-    "STATION_N86_04": {
-        "display_name": "Brislington",
-        "position": {"lat": 51.4380, "lon": -2.5650},
-        "atco_reference": "01000009901",
-        "serving_route": "N86",
-        "sequence_number": 4
-    },
-    "STATION_N86_05": {
-        "display_name": "Temple Gate",
-        "position": {"lat": 51.4480, "lon": -2.5760},
-        "atco_reference": "01000053301",
-        "serving_route": "N86",
-        "sequence_number": 5
-    },
-    "STATION_N86_06": {
-        "display_name": "Old Market",
-        "position": {"lat": 51.4530, "lon": -2.5780},
-        "atco_reference": "01000052201",
-        "serving_route": "N86",
-        "sequence_number": 6
-    },
-    "STATION_N86_07": {
-        "display_name": "Broadmead Shopping",
-        "position": {"lat": 51.4560, "lon": -2.5840},
-        "atco_reference": "01000588102",
-        "serving_route": "N86",
-        "sequence_number": 7
     }
 }
 
+# Route 72 path geometry from Temple Meads to Frenchay
 ROUTE_PATH_COORDINATES = {
     "72": [
-        (51.4496, -2.5811),  # Temple Meads
+        (51.4496, -2.5811),  # Temple Meads Station
         (51.4510, -2.5820),  # Temple Gate
         (51.4528, -2.5975),  # The Centre
         (51.4545, -2.5879),  # Cabot Circus
         (51.4600, -2.5880),  # Stokes Croft
         (51.4640, -2.5900),  # Gloucester Road
         (51.4750, -2.5850),  # Horfield
-        (51.4900, -2.5950),  # Southmead
-        (51.5005, -2.5490),  # UWE Frenchay
-    ],
-    "N1": [
-        (51.5250, -2.6100),  # Cribbs Causeway
-        (51.5150, -2.6050),  # Approach to Southmead
-        (51.5000, -2.6000),  # Southmead
-        (51.4850, -2.5950),  # Filton Avenue
-        (51.4700, -2.5920),  # Gloucester Road North
-        (51.4600, -2.5900),  # Gloucester Road
-        (51.4560, -2.5850),  # Broadmead
-        (51.4545, -2.5950),  # City Centre
-    ],
-    "N86": [
-        (51.4200, -2.5950),  # Hengrove Park
-        (51.4280, -2.6000),  # Whitchurch
-        (51.4350, -2.5880),  # Knowle
-        (51.4380, -2.5650),  # Brislington
-        (51.4450, -2.5720),  # Approach to Temple Gate
-        (51.4480, -2.5760),  # Temple Gate
-        (51.4530, -2.5780),  # Old Market
-        (51.4560, -2.5840),  # Broadmead Shopping
+        (51.4900, -2.5950),  # Southmead Hospital
+        (51.5005, -2.5490),  # UWE Frenchay Campus
     ]
 }
 
@@ -327,10 +219,16 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
             "max_longitude": -2.40
         }
         bbox = f"{expanded_bounds['min_latitude']},{expanded_bounds['min_longitude']},{expanded_bounds['max_latitude']},{expanded_bounds['max_longitude']}"
+
+        # Build API URL with lineRef filter for Route 72
         api_url = f"{BODS_CREDENTIALS['siri_endpoint']}?api_key={BODS_CREDENTIALS['api_key']}&boundingBox={bbox}"
-        
-        print(f"[BODS] Fetching from: {api_url.replace(BODS_CREDENTIALS['api_key'], '***')}")
-        
+
+        # Add lineRef parameter to filter for Route 72 only (more efficient)
+        if MONITORED_ROUTES and len(MONITORED_ROUTES) > 0:
+            api_url += f"&lineRef={MONITORED_ROUTES[0]}"
+
+        print(f"[BODS] Fetching Route 72 buses from: {api_url.replace(BODS_CREDENTIALS['api_key'], '***')}")
+
         response = requests.get(api_url, timeout=15)
         
         print(f"[BODS] Response status: {response.status_code}")
@@ -1346,13 +1244,21 @@ def verify_apis_on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    print("[START] Bristol Transit Intelligence API Server")
+    print("\n" + "="*70)
+    print("  TRANSIGHT - Bristol Transit Intelligence API Server")
+    print("="*70)
     print(f"[INFO] Monitoring Routes: {'ALL ROUTES' if MONITORED_ROUTES is None else ', '.join(MONITORED_ROUTES)}")
+    print(f"[INFO] Route 72: Temple Meads <-> UWE Frenchay Campus")
     print(f"[INFO] Base Stations Loaded: {len(TRANSIT_STATIONS)}")
-    
+    print(f"[INFO] Real-time Data Sources:")
+    print(f"       1. Bus GPS: BODS API (SIRI-VM)")
+    print(f"       2. Traffic: TomTom Traffic Flow API")
+    print(f"       3. Passengers: YOLOv8 Computer Vision")
+    print("="*70 + "\n")
+
     # Verify APIs before starting
     verify_apis_on_startup()
-    
+
     uvicorn.run(
         api,
         host="0.0.0.0",

@@ -507,12 +507,12 @@ function BristolTransitApp() {
                 color: 'white'
               }}
             >
-              <Typography variant="h5" fontWeight={900}>Bristol Transit Intelligence</Typography>
+              <Typography variant="h5" fontWeight={900}>Transight - Bristol Transit Intelligence</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Routes 72, N1, N86 - Live Bus Tracking
+                Route 72: Temple Meads ↔ UWE Frenchay - Live Bus Tracking
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                Select a stop to view real-time bus arrivals
+                Real-time GPS • Traffic Data • Passenger Counts
               </Typography>
             </Paper>
           </Box>
