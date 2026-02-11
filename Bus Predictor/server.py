@@ -14,8 +14,8 @@ import time
 from collections import defaultdict
 
 # Load API keys from environment variables (or use provided keys as default)
-BODS_API_KEY = os.environ.get("BODS_API_KEY", "2bc39438a3eeec844704f182bab7892fea39b8bd")
-TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "a1jG3Ptx5icrrFGYVRBWQo4o0t2XurwP")
+BODS_API_KEY = "2bc39438a3eeec844704f182bab7892fea39b8bd"
+TOMTOM_API_KEY = "a1jG3Ptx5icrrFGYVRBWQo4o0t2XurwP"
 
 api = FastAPI(title="Bristol Transit Intelligence API", version="1.0.0")
 
