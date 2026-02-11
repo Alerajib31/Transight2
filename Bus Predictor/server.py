@@ -13,6 +13,10 @@ from math import radians, cos, sin, asin, sqrt, atan2, degrees
 import time
 from collections import defaultdict
 
+# Load API keys from environment variables (or use provided keys as default)
+BODS_API_KEY = os.environ.get("BODS_API_KEY", "2bc39438a3eeec844704f182bab7892fea39b8bd")
+TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "a1jG3Ptx5icrrFGYVRBWQo4o0t2XurwP")
+
 api = FastAPI(title="Bristol Transit Intelligence API", version="1.0.0")
 
 api.add_middleware(
@@ -24,19 +28,19 @@ api.add_middleware(
 )
 
 BODS_CREDENTIALS = {
-    "api_key": "2bc39438a3eeec844704f182bab7892fea39b8bd",
+    "api_key": BODS_API_KEY,
     "base_url": "https://data.bus-data.dft.gov.uk/api/v1/",
     "siri_endpoint": "https://data.bus-data.dft.gov.uk/api/v1/datafeed/"
 }
 
 TOMTOM_TRAFFIC_CONFIG = {
-    "api_key": "a1jG3Ptx5icrrFGYVRBWQo4o0t2XurwP",
+    "api_key": TOMTOM_API_KEY,
     "base_url": "https://api.tomtom.com/traffic/services/4/flowSegmentData",
     "style": "absolute",
     "zoom": 10
 }
 
-SIMULATED_BUSES_ENABLED = True
+SIMULATED_BUSES_ENABLED = False
 MONITORED_ROUTES = None
 
 BRISTOL_BOUNDS = {
@@ -270,57 +274,6 @@ def compute_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float
     initial_bearing = atan2(x, y)
     return (degrees(initial_bearing) + 360) % 360
 
-def generate_simulated_buses() -> Dict[str, Any]:
-    import random
-    from datetime import datetime
-    
-    simulated_vehicles = {}
-    routes_to_simulate = MONITORED_ROUTES if MONITORED_ROUTES is not None else ["72", "N1", "N86"]
-    
-    for route_num in routes_to_simulate:
-        num_buses_per_route = random.randint(2, 4)
-        route_coords = ROUTE_PATH_COORDINATES.get(route_num, ALL_ROUTE_COORDINATES)
-        
-        for i in range(num_buses_per_route):
-            vehicle_id = f"SIM_{route_num}_{i+1}"
-            route_index = random.randint(0, len(route_coords) - 1)
-            base_lat, base_lon = route_coords[route_index]
-            lat = base_lat + random.uniform(-0.002, 0.002)
-            lon = base_lon + random.uniform(-0.002, 0.002)
-            
-            if route_num == "72":
-                destinations = ["UWE Frenchay", "Temple Meads"]
-            elif route_num == "N1":
-                destinations = ["Cribbs Causeway", "City Centre"]
-            elif route_num == "N86":
-                destinations = ["Hengrove", "Broadmead"]
-            else:
-                destinations = ["City Centre", "Outbound"]
-            
-            simulated_vehicles[vehicle_id] = {
-                "vehicle_identifier": vehicle_id,
-                "route_designation": route_num,
-                "latitude": lat,
-                "longitude": lon,
-                "operator_name": "FirstBus",
-                "destination_name": destinations[i % 2],
-                "last_updated": datetime.now().isoformat(),
-                "data_source": "SIMULATED"
-            }
-            
-            vehicle_movement_log[vehicle_id].append({
-                "lat": lat,
-                "lon": lon,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            if len(vehicle_movement_log[vehicle_id]) > 25:
-                vehicle_movement_log[vehicle_id] = vehicle_movement_log[vehicle_id][-25:]
-    
-    print(f"[SIMULATED] Generated {len(simulated_vehicles)} buses")
-    return simulated_vehicles
-
-
 def extract_dynamic_stops_from_vehicles(vehicles_dict: Dict[str, Any]) -> Dict[str, Any]:
     dynamic_stations = {}
     station_counter = 1
@@ -464,7 +417,7 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
                 continue
         
         # Show filtering statistics
-                print(f"  - Total vehicles in feed: {len(vehicle_activities)}")
+        print(f"  - Total vehicles in feed: {len(vehicle_activities)}")
         print(f"  - Filtered by route: {filtered_out_route}")
         print(f"  - Filtered by missing location: {filtered_out_location}")
         print(f"  - Filtered by Bristol bounds: {filtered_out_bounds}")
@@ -479,37 +432,21 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
             return vehicles_dict
         else:
             print(f"[INFO] ⚠️ BODS API returned empty data (no vehicles operating)")
-            if SIMULATED_BUSES_ENABLED:
-                print(f"[FALLBACK] 🔄 Switching to simulated bus data for demonstration")
-                return generate_simulated_buses()
-            else:
-                print(f"[WARNING] ❌ No fallback available (simulated data disabled)")
-                return {}
+            print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+            return {}
         
     except requests.exceptions.RequestException as req_error:
         print(f"[ERROR] ❌ BODS API request failed: {req_error}")
-        if SIMULATED_BUSES_ENABLED:
-            print(f"[FALLBACK] 🔄 API unavailable, using simulated bus data")
-            return generate_simulated_buses()
-        else:
-            print(f"[WARNING] ❌ No fallback available (simulated data disabled)")
-            return {}
+        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        return {}
     except ET.ParseError as xml_error:
         print(f"[ERROR] ❌ XML parsing failed: {xml_error}")
-        if SIMULATED_BUSES_ENABLED:
-            print(f"[FALLBACK] 🔄 Data corruption, using simulated bus data")
-            return generate_simulated_buses()
-        else:
-            print(f"[WARNING] ❌ No fallback available (simulated data disabled)")
-            return {}
+        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        return {}
     except Exception as general_error:
         print(f"[ERROR] ❌ Unexpected error in vehicle fetch: {general_error}")
-        if SIMULATED_BUSES_ENABLED:
-            print(f"[FALLBACK] 🔄 Unexpected error, using simulated bus data")
-            return generate_simulated_buses()
-        else:
-            print(f"[WARNING] ❌ No fallback available (simulated data disabled)")
-            return {}
+        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        return {}
 
 
 def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
@@ -563,17 +500,15 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
         return None
 
 
-def estimate_traffic_conditions(latitude: float, longitude: float) -> Dict[str, Any]:
+def estimate_traffic_conditions(latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
     """
-    Get real-time traffic conditions from TomTom API with fallback to heuristics
+    Get real-time traffic conditions from TomTom API
     
-    Primary: TomTom Traffic Flow API (free tier)
-    Fallback: Time-based heuristics with rush hour patterns
+    Uses TomTom Traffic Flow API (free tier: 2,500 requests/day)
+    Calculates delay based on actual speed vs free flow speed
     
     Returns traffic delay, current speed, and confidence metrics
     """
-    import random
-    
     # Try to fetch real traffic data from TomTom API
     tomtom_data = fetch_tomtom_traffic_data(latitude, longitude)
     
@@ -582,19 +517,22 @@ def estimate_traffic_conditions(latitude: float, longitude: float) -> Dict[str, 
         current_speed = tomtom_data["current_speed"]
         free_flow_speed = tomtom_data["free_flow_speed"]
         
-        # Calculate speed ratio and estimated delay
+        # Calculate speed ratio
         speed_ratio = current_speed / free_flow_speed if free_flow_speed > 0 else 1.0
         
-        # Estimate delay: slower speeds = more delay
-        # Formula: delay increases exponentially as speed decreases
-        if speed_ratio < 0.4:  # Severe congestion (< 40% of free flow)
-            base_delay = random.uniform(10, 18)
-        elif speed_ratio < 0.6:  # Heavy traffic (40-60%)
-            base_delay = random.uniform(5, 10)
-        elif speed_ratio < 0.8:  # Moderate traffic (60-80%)
-            base_delay = random.uniform(2, 5)
-        else:  # Light traffic (> 80%)
-            base_delay = random.uniform(0, 2)
+        # Calculate delay using a deterministic formula based on speed ratio
+        # When speed_ratio = 1.0 (no congestion), delay = 0
+        # When speed_ratio approaches 0 (gridlock), delay increases exponentially
+        if speed_ratio >= 0.9:
+            base_delay = 0
+        elif speed_ratio >= 0.7:
+            base_delay = (1 - speed_ratio) * 10  # 0-3 minutes
+        elif speed_ratio >= 0.5:
+            base_delay = 2 + (0.7 - speed_ratio) * 20  # 2-6 minutes
+        elif speed_ratio >= 0.3:
+            base_delay = 6 + (0.5 - speed_ratio) * 30  # 6-12 minutes
+        else:
+            base_delay = 12 + (0.3 - speed_ratio) * 40  # 12+ minutes
         
         return {
             "estimated_delay_minutes": round(base_delay, 1),
@@ -603,54 +541,21 @@ def estimate_traffic_conditions(latitude: float, longitude: float) -> Dict[str, 
             "confidence": tomtom_data["confidence"],
             "method": "tomtom_traffic_api",
             "data_source": "TomTom Traffic Flow API (Real-time)",
-            "road_closure": tomtom_data.get("road_closure", False)
+            "road_closure": tomtom_data.get("road_closure", False),
+            "speed_ratio": round(speed_ratio, 2)
         }
     
-    # Fallback: Time-based heuristics if API unavailable
-    print("[INFO] Using fallback traffic heuristics (TomTom API not configured or unavailable)")
-    
-    current_hour = datetime.now().hour
-    current_day = datetime.now().weekday()
-    
-    # Base traffic model with realistic variation
-    base_delay = 0
-    
-    # Weekday rush hour patterns
-    if current_day < 5:  # Monday to Friday
-        if 7 <= current_hour <= 9:  # Morning rush
-            base_delay = random.uniform(6, 12)
-        elif 16 <= current_hour <= 18:  # Evening rush
-            base_delay = random.uniform(8, 15)
-        elif 12 <= current_hour <= 14:  # Lunch hour
-            base_delay = random.uniform(2, 6)
-        else:
-            base_delay = random.uniform(0, 3)
-    else:  # Weekend
-        if 10 <= current_hour <= 17:  # Daytime
-            base_delay = random.uniform(2, 5)
-        else:
-            base_delay = random.uniform(0, 2)
-    
-    # Calculate speed based on delay
-    free_flow_speed = 40  # km/h
-    current_speed = max(15, free_flow_speed - (base_delay * 2))
-    
-    return {
-        "estimated_delay_minutes": round(base_delay, 1),
-        "current_speed_estimate": round(current_speed, 1),
-        "free_flow_speed": free_flow_speed,
-        "confidence": 0.65,
-        "method": "time_based_heuristics_fallback",
-        "data_source": "Heuristic estimation (Configure TomTom API key for real data)"
-    }
+    # Return None to indicate traffic data unavailable
+    print(f"[WARNING] TomTom API data unavailable for ({latitude:.4f}, {longitude:.4f})")
+    return None
 
 
 def predict_arrival_delay_ml(traffic_minutes: float, passenger_count: int, is_raining: bool = False) -> float:
     """
     Use machine learning model to predict bus delay
     Inputs:
-        - traffic_minutes: Traffic-induced delay
-        - passenger_count: Number of waiting passengers
+        - traffic_minutes: Traffic-induced delay (from TomTom API)
+        - passenger_count: Number of waiting passengers (from CV sensors)
         - is_raining: Weather condition boolean
     Output: Predicted additional delay in minutes
     """
@@ -659,6 +564,7 @@ def predict_arrival_delay_ml(traffic_minutes: float, passenger_count: int, is_ra
         boarding_delay = (passenger_count * 4.5) / 60  # 4.5 seconds per passenger
         weather_penalty = 2.5 if is_raining else 0
         total_delay = traffic_minutes + boarding_delay + weather_penalty
+        print(f"[ML] Using heuristic prediction: traffic={traffic_minutes:.1f}, crowd={passenger_count}, rain={is_raining} → {total_delay:.2f}min")
         return round(total_delay, 2)
     
     try:
@@ -672,8 +578,11 @@ def predict_arrival_delay_ml(traffic_minutes: float, passenger_count: int, is_ra
         # Convert to XGBoost matrix format
         dmatrix = xgb.DMatrix(feature_df)
         
-        # Generate prediction
+        # Generate prediction using all three data sources
         prediction = ml_predictor.predict(dmatrix)[0]
+        
+        print(f"[ML] XGBoost prediction: traffic={traffic_minutes:.1f}, crowd={passenger_count}, rain={is_raining} → {prediction:.2f}min")
+        
         return round(float(prediction), 2)
         
     except Exception as model_error:
@@ -720,13 +629,27 @@ async def root_endpoint():
 @api.get("/api/health", tags=["System"])
 async def health_check():
     """System health and status check"""
+    # Check API key configuration
+    bods_configured = bool(BODS_CREDENTIALS.get("api_key"))
+    tomtom_configured = bool(TOMTOM_TRAFFIC_CONFIG.get("api_key"))
+    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "stations_loaded": len(TRANSIT_STATIONS),
         "active_vehicles_tracked": len(data_cache["vehicles"]["content"]),
         "ml_model_loaded": ml_predictor is not None,
-        "sensors_active": len(sensor_data_registry)
+        "sensors_active": len(sensor_data_registry),
+        "api_configuration": {
+            "bods_api_configured": bods_configured,
+            "tomtom_api_configured": tomtom_configured,
+            "simulated_data_enabled": SIMULATED_BUSES_ENABLED
+        },
+        "data_sources": {
+            "bus_positions": "BODS API (Real-time)" if bods_configured else "NOT CONFIGURED - Set BODS_API_KEY env var",
+            "traffic_data": "TomTom API" if tomtom_configured else "Not configured (optional)",
+            "passenger_count": "CV Sensors / Manual"
+        }
     }
 
 
@@ -833,8 +756,12 @@ async def find_nearby_stations(
 @api.get("/api/stations/{station_id}/approaching", tags=["Transit Data"])
 async def get_approaching_vehicles(station_id: str):
     """
-    Get buses approaching a specific station
-    Returns vehicles with ETA predictions
+    Get buses approaching a specific station with ML-based ETA predictions
+    
+    Uses three real data sources:
+    1. Live bus GPS positions from BODS API
+    2. Real-time traffic conditions from TomTom Traffic API
+    3. Passenger density from CV sensors (YOLOv8)
     """
     if station_id not in TRANSIT_STATIONS:
         raise HTTPException(status_code=404, detail=f"Station {station_id} not found")
@@ -852,9 +779,15 @@ async def get_approaching_vehicles(station_id: str):
     vehicles_data = data_cache["vehicles"]["content"]
     approaching_vehicles = []
     
-    # Get sensor data for this station (crowd count)
+    # Get sensor data for this station (crowd count) - Data Source #3
     sensor_reading = sensor_data_registry.get(station_id, {"detected_people": 0})
     crowd_count = sensor_reading.get("detected_people", 0)
+    
+    print(f"[PREDICTION] Station: {station_info['display_name']}")
+    print(f"[PREDICTION] Data Source 1 - BODS API: {len(vehicles_data)} vehicles tracked")
+    print(f"[PREDICTION] Data Source 3 - CV Sensor: {crowd_count} passengers waiting")
+    
+    traffic_success_count = 0
     
     for vehicle_id, vehicle_data in vehicles_data.items():
         distance_km = calculate_geo_distance(
@@ -866,19 +799,28 @@ async def get_approaching_vehicles(station_id: str):
         
         # Consider vehicles within 5km radius
         if distance_km <= 5.0:
-            # Get traffic conditions
+            # Get traffic conditions - Data Source #2
             traffic_info = estimate_traffic_conditions(
                 vehicle_data["latitude"],
                 vehicle_data["longitude"]
             )
             
+            if traffic_info:
+                traffic_success_count += 1
+            
             # Calculate ETA
             average_speed_kph = 25  # Urban bus average
             base_eta_minutes = (distance_km / average_speed_kph) * 60
             
-            # Apply ML prediction
+            # Extract traffic delay (0 if no traffic data)
+            traffic_delay = traffic_info["estimated_delay_minutes"] if traffic_info else 0
+            traffic_source = traffic_info["data_source"] if traffic_info else "No data"
+            
+            # Apply ML prediction using all three factors
+            # - traffic_delay: from TomTom API (Data Source #2)
+            # - crowd_count: from CV sensors (Data Source #3)
             predicted_delay = predict_arrival_delay_ml(
-                traffic_info["estimated_delay_minutes"],
+                traffic_delay,
                 crowd_count,
                 False  # Weather integration can be added
             )
@@ -899,10 +841,20 @@ async def get_approaching_vehicles(station_id: str):
                 },
                 "destination": vehicle_data["destination_name"],
                 "operator": vehicle_data["operator_name"],
-                "traffic_delay": traffic_info["estimated_delay_minutes"],
+                "traffic_delay": round(traffic_delay, 1),
                 "crowd_delay": round((crowd_count * 4.5) / 60, 1),
-                "position_trail": trail[-15:]  # Last 15 positions
+                "position_trail": trail[-15:],  # Last 15 positions
+                "data_source": vehicle_data.get("data_source", "BODS"),
+                "traffic_data_source": traffic_source,
+                "traffic_details": {
+                    "current_speed": traffic_info.get("current_speed_estimate") if traffic_info else None,
+                    "free_flow_speed": traffic_info.get("free_flow_speed") if traffic_info else None,
+                    "speed_ratio": traffic_info.get("speed_ratio") if traffic_info else None
+                } if traffic_info else None
             })
+    
+    print(f"[PREDICTION] Data Source 2 - TomTom API: {traffic_success_count}/{len(approaching_vehicles)} vehicles with traffic data")
+    print(f"[PREDICTION] ML Model: {len(approaching_vehicles)} ETAs calculated with all available data")
     
     # Sort by ETA (soonest first)
     approaching_vehicles.sort(key=lambda x: x["eta_minutes"])
@@ -912,6 +864,12 @@ async def get_approaching_vehicles(station_id: str):
         "station_name": station_info["display_name"],
         "waiting_passengers": crowd_count,
         "approaching_count": len(approaching_vehicles),
+        "data_sources": {
+            "bus_positions": "BODS API (Real-time GPS)",
+            "traffic_data": "TomTom Traffic API (Real-time)",
+            "passenger_count": "CV Sensor (YOLOv8)" if crowd_count > 0 else "CV Sensor (YOLOv8) - No data",
+            "ml_model": "XGBoost (trained)" if ml_predictor else "Heuristic (fallback)"
+        },
         "vehicles": approaching_vehicles
     }
 

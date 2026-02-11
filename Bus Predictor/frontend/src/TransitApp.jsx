@@ -367,7 +367,7 @@ function BristolTransitApp() {
     fetchApproachingVehicles(activeStation);
     const refreshInterval = setInterval(() => {
       fetchApproachingVehicles(activeStation);
-    }, 12000); // Refresh every 12 seconds
+    }, 10000); // Refresh every 10 seconds
     
     return () => clearInterval(refreshInterval);
   }, [activeStation, displayMode, fetchApproachingVehicles]);
@@ -587,6 +587,9 @@ function BristolTransitApp() {
                     <Typography color="text.secondary">
                       No buses nearby at the moment
                     </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                      Real-time data from BODS API
+                    </Typography>
                   </Paper>
                 ) : (
                   <Stack spacing={1.5}>
@@ -631,14 +634,18 @@ function BristolTransitApp() {
                           </Box>
                           
                           {/* Additional Info */}
-                          <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
+                          <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+                            {/* Passenger count indicator */}
                             <Chip
                               icon={<GroupIcon />}
-                              label={`Crowd delay: ${vehicle.crowd_delay}min`}
+                              label={vehicle.crowd_delay > 0 ? `${vehicle.crowd_delay}min delay` : 'No passengers'}
                               size="small"
+                              color={vehicle.crowd_delay > 0 ? "info" : "default"}
                               variant="outlined"
                             />
-                            {vehicle.traffic_delay > 0 && (
+                            
+                            {/* Traffic indicator */}
+                            {vehicle.traffic_delay > 0 ? (
                               <Chip
                                 icon={<SpeedIcon />}
                                 label={`Traffic: +${vehicle.traffic_delay}min`}
@@ -646,7 +653,24 @@ function BristolTransitApp() {
                                 color="warning"
                                 variant="outlined"
                               />
+                            ) : (
+                              <Chip
+                                icon={<SpeedIcon />}
+                                label="No traffic"
+                                size="small"
+                                color="default"
+                                variant="outlined"
+                              />
                             )}
+                            
+                            {/* Data source indicator */}
+                            <Chip
+                              icon={<span>{vehicle.data_source === 'BODS_SIRI_VM' ? '✓' : '⚠'}</span>}
+                              label={vehicle.data_source === 'BODS_SIRI_VM' ? 'Live GPS' : vehicle.data_source}
+                              size="small"
+                              color={vehicle.data_source === 'BODS_SIRI_VM' ? 'success' : 'warning'}
+                              variant="outlined"
+                            />
                           </Box>
                         </CardContent>
                       </Card>
@@ -754,18 +778,76 @@ function BristolTransitApp() {
               {/* Data Sources */}
               <Paper sx={{ p: 2.5, bgcolor: '#e3f2fd' }}>
                 <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
-                  Data Sources
+                  🔄 Real-Time Data Sources
                 </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  • GPS Position: BODS API (Real-time)
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  • Traffic Conditions: Time-based Model
-                </Typography>
-                <Typography variant="body2">
-                  • Passenger Count: CV Sensors / Fallback
+                
+                {/* Data Source 1: Bus GPS */}
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Box sx={{ 
+                    width: 10, 
+                    height: 10, 
+                    borderRadius: '50%', 
+                    bgcolor: trackedVehicle.data_source === 'BODS_SIRI_VM' ? '#4caf50' : '#f44336',
+                    mr: 1 
+                  }} />
+                  <Typography variant="body2">
+                    <strong>1. Bus GPS:</strong> BODS API (Live)
+                  </Typography>
+                </Box>
+                
+                {/* Data Source 2: Traffic */}
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Box sx={{ 
+                    width: 10, 
+                    height: 10, 
+                    borderRadius: '50%', 
+                    bgcolor: trackedVehicle.traffic_data_source?.includes('TomTom') ? '#4caf50' : '#ff9800',
+                    mr: 1 
+                  }} />
+                  <Typography variant="body2">
+                    <strong>2. Traffic:</strong> {trackedVehicle.traffic_data_source || 'Not available'}
+                  </Typography>
+                </Box>
+                
+                {/* Data Source 3: Passenger Count */}
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Box sx={{ 
+                    width: 10, 
+                    height: 10, 
+                    borderRadius: '50%', 
+                    bgcolor: trackedVehicle.crowd_delay > 0 ? '#4caf50' : '#9e9e9e',
+                    mr: 1 
+                  }} />
+                  <Typography variant="body2">
+                    <strong>3. Passengers:</strong> CV Sensor (YOLOv8) {trackedVehicle.crowd_delay > 0 ? '- Detected' : '- No data'}
+                  </Typography>
+                </Box>
+                
+                <Divider sx={{ my: 1 }} />
+                
+                {/* ML Model Info */}
+                <Typography variant="caption" color="text.secondary">
+                  Predictions use XGBoost ML model combining all three data sources
                 </Typography>
               </Paper>
+              
+              {/* Traffic Details (if available) */}
+              {trackedVehicle.traffic_details && (
+                <Paper sx={{ p: 2.5, mt: 2, bgcolor: '#fff3e0' }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+                    🚦 Traffic Details (TomTom)
+                  </Typography>
+                  <Typography variant="body2">
+                    Current Speed: {trackedVehicle.traffic_details.current_speed} km/h
+                  </Typography>
+                  <Typography variant="body2">
+                    Free Flow: {trackedVehicle.traffic_details.free_flow_speed} km/h
+                  </Typography>
+                  <Typography variant="body2">
+                    Congestion: {Math.round((1 - trackedVehicle.traffic_details.speed_ratio) * 100)}%
+                  </Typography>
+                </Paper>
+              )}
             </Box>
           )}
         </Box>
