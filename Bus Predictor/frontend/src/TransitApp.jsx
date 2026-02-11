@@ -98,6 +98,28 @@ const createVehicleMarker = (routeNumber, colorCode) => L.divIcon({
   className: 'vehicle-marker'
 });
 
+// Small bus marker for overview map (all active vehicles)
+const createSmallVehicleMarker = (routeNumber, colorCode) => L.divIcon({
+  html: `<div style="
+    width: 32px;
+    height: 32px;
+    background: ${colorCode};
+    border: 3px solid white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 900;
+    font-size: 11px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+    z-index: 5000;
+  ">${routeNumber}</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  className: 'vehicle-marker-small'
+});
+
 // ===========================
 // UTILITY FUNCTIONS
 // ===========================
@@ -131,15 +153,16 @@ const formatDistance = (kilometers) => {
 // MAP COMPONENT
 // ===========================
 
-function TransitMapView({ 
-  userPosition, 
-  transitStations, 
-  activeStation, 
-  trackedVehicle, 
-  displayMode, 
+function TransitMapView({
+  userPosition,
+  transitStations,
+  activeStation,
+  trackedVehicle,
+  displayMode,
   onStationSelect,
   stationVehicles,
-  onVehicleSelect
+  onVehicleSelect,
+  allActiveVehicles
 }) {
   const mapInstance = useRef(null);
   const isInitialized = useRef(false);
@@ -195,6 +218,30 @@ function TransitMapView({
         </Marker>
       )}
       
+      {/* All Active Vehicles (always visible on map) */}
+      {allActiveVehicles && allActiveVehicles.map((vehicle) => (
+        <Marker
+          key={`active-${vehicle.vehicle_id}`}
+          position={[vehicle.position.lat, vehicle.position.lon]}
+          icon={createSmallVehicleMarker(vehicle.route, getColorForRoute(vehicle.route))}
+        >
+          <Popup>
+            <Box sx={{ minWidth: 180 }}>
+              <Typography variant="subtitle1" fontWeight={700}>Route {vehicle.route}</Typography>
+              <Typography variant="body2">{vehicle.destination}</Typography>
+              <Divider sx={{ my: 0.5 }} />
+              <Typography variant="caption" color="text.secondary">
+                Operator: {vehicle.operator}
+              </Typography>
+              <br />
+              <Typography variant="caption" color="text.secondary">
+                Live GPS from BODS API
+              </Typography>
+            </Box>
+          </Popup>
+        </Marker>
+      ))}
+
       {/* Transit Station Markers */}
       {displayMode === 'stations' && transitStations.map((station) => (
         <Marker
@@ -305,6 +352,8 @@ function BristolTransitApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [availableStations, setAvailableStations] = useState([]);
+  const [trafficApiStatus, setTrafficApiStatus] = useState(null);
+  const [allActiveVehicles, setAllActiveVehicles] = useState([]);
   
   const SERVER_BASE_URL = "http://127.0.0.1:8000/api";
   
@@ -316,12 +365,12 @@ function BristolTransitApp() {
           setUserPosition([position.coords.latitude, position.coords.longitude]);
         },
         () => {
-          // Fallback to Bristol city center
-          setUserPosition([51.4545, -2.5879]);
+          // Fallback to UWE Frenchay Campus
+          setUserPosition([51.5005, -2.5490]);
         }
       );
     } else {
-      setUserPosition([51.4545, -2.5879]);
+      setUserPosition([51.5005, -2.5490]);
     }
   }, []);
   
@@ -329,9 +378,7 @@ function BristolTransitApp() {
   useEffect(() => {
     const loadStations = async () => {
       try {
-        const response = await axios.get(`${SERVER_BASE_URL}/stations`, {
-          params: { route: '72' }
-        });
+        const response = await axios.get(`${SERVER_BASE_URL}/stations`);
         setAvailableStations(response.data.stations || []);
       } catch (error) {
         console.error("Failed to load stations:", error);
@@ -339,7 +386,22 @@ function BristolTransitApp() {
     };
     loadStations();
   }, []);
-  
+
+  // Fetch all active vehicles for map display (every 15 seconds)
+  useEffect(() => {
+    const fetchActiveVehicles = async () => {
+      try {
+        const response = await axios.get(`${SERVER_BASE_URL}/vehicles/active`);
+        setAllActiveVehicles(response.data.vehicles || []);
+      } catch (error) {
+        console.error("Failed to fetch active vehicles:", error);
+      }
+    };
+    fetchActiveVehicles();
+    const interval = setInterval(fetchActiveVehicles, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Fetch vehicles approaching selected station
   const fetchApproachingVehicles = useCallback(async (station) => {
     if (!station || !userPosition) return;
@@ -351,6 +413,7 @@ function BristolTransitApp() {
       );
       
       setStationVehicles(response.data.vehicles || []);
+      setTrafficApiStatus(response.data.traffic_api_status || null);
       setLastRefreshTime(new Date());
     } catch (error) {
       console.error("Failed to fetch vehicles:", error);
@@ -362,7 +425,7 @@ function BristolTransitApp() {
   
   // Auto-refresh vehicle data
   useEffect(() => {
-    if (!activeStation || displayMode !=='vehicles') return;
+    if (!activeStation || displayMode === 'stations') return;
     
     fetchApproachingVehicles(activeStation);
     const refreshInterval = setInterval(() => {
@@ -423,6 +486,7 @@ function BristolTransitApp() {
           onStationSelect={handleStationSelection}
           stationVehicles={stationVehicles}
           onVehicleSelect={handleVehicleSelection}
+          allActiveVehicles={allActiveVehicles}
         />
         
         {/* Map Overlay - Header */}
@@ -445,7 +509,7 @@ function BristolTransitApp() {
             >
               <Typography variant="h5" fontWeight={900}>Bristol Transit Intelligence</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Route 72: Temple Meads ↔ UWE Frenchay
+                Routes 72, N1, N86 - Live Bus Tracking
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.8 }}>
                 Select a stop to view real-time bus arrivals
@@ -576,7 +640,15 @@ function BristolTransitApp() {
                 <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                   Approaching Buses ({stationVehicles.length})
                 </Typography>
-                
+
+                {trafficApiStatus && !trafficApiStatus.working && stationVehicles.length > 0 && (
+                  <Paper sx={{ p: 1.5, mb: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
+                    <Typography variant="caption" color="warning.main">
+                      Traffic data unavailable - ETAs may not reflect current road conditions
+                    </Typography>
+                  </Paper>
+                )}
+
                 {isLoading && stationVehicles.length === 0 ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                     <CircularProgress />
@@ -585,10 +657,12 @@ function BristolTransitApp() {
                   <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f9fafb' }}>
                     <DirectionsBusIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 1 }} />
                     <Typography color="text.secondary">
-                      No buses nearby at the moment
+                      No buses detected nearby
                     </Typography>
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                      Real-time data from BODS API
+                      {new Date().getHours() < 6 || new Date().getHours() > 23
+                        ? 'Buses are not in service at this hour (service: 06:00-23:00)'
+                        : 'Live data from BODS API - buses may be out of range'}
                     </Typography>
                   </Paper>
                 ) : (
