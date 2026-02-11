@@ -44,10 +44,10 @@ SIMULATED_BUSES_ENABLED = False
 MONITORED_ROUTES = None
 
 BRISTOL_BOUNDS = {
-    "min_latitude": 51.40,
-    "max_latitude": 51.55,
-    "min_longitude": -2.70,
-    "max_longitude": -2.50
+    "min_latitude": 51.30,
+    "max_latitude": 51.65,
+    "min_longitude": -2.80,
+    "max_longitude": -2.40
 }
 
 TRANSIT_STATIONS = {
@@ -851,8 +851,8 @@ async def get_approaching_vehicles(station_id: str):
             station_lat
         )
         
-        # Consider vehicles within 5km radius
-        if distance_km <= 5.0:
+        # Consider vehicles within 10km radius (Bristol routes span up to ~8km)
+        if distance_km <= 10.0:
             # Get traffic conditions - Data Source #2
             traffic_info = estimate_traffic_conditions(
                 vehicle_data["latitude"],
