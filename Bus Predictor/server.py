@@ -312,7 +312,12 @@ def extract_dynamic_stops_from_vehicles(vehicles_dict: Dict[str, Any]) -> Dict[s
 
 
 def fetch_live_vehicle_positions() -> Dict[str, Any]:
+    """
+    Fetch live bus positions from BODS SIRI-VM API
+    Returns dictionary of vehicles with their positions and metadata
+    """
     try:
+        # Use expanded bounds to capture all vehicles in Bristol area
         expanded_bounds = {
             "min_latitude": 51.30,
             "max_latitude": 51.65,
@@ -322,7 +327,13 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
         bbox = f"{expanded_bounds['min_latitude']},{expanded_bounds['min_longitude']},{expanded_bounds['max_latitude']},{expanded_bounds['max_longitude']}"
         api_url = f"{BODS_CREDENTIALS['siri_endpoint']}?api_key={BODS_CREDENTIALS['api_key']}&boundingBox={bbox}"
         
+        print(f"[BODS] Fetching from: {api_url.replace(BODS_CREDENTIALS['api_key'], '***')}")
+        
         response = requests.get(api_url, timeout=15)
+        
+        print(f"[BODS] Response status: {response.status_code}")
+        print(f"[BODS] Response size: {len(response.content)} bytes")
+        
         response.raise_for_status()
         
         root = ET.fromstring(response.content)
@@ -423,29 +434,36 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
         print(f"  - Filtered by Bristol bounds: {filtered_out_bounds}")
         print(f"  - Remaining vehicles: {len(vehicles_dict)}")
         
-        # Decision point: Use real data or simulated?
         if len(vehicles_dict) > 0:
             route_list = list(set(v["route_designation"] for v in vehicles_dict.values()))
-            print(f"[SUCCESS] ✅ Using {len(vehicles_dict)} REAL vehicles from BODS API")
+            print(f"[SUCCESS] Using {len(vehicles_dict)} REAL vehicles from BODS API")
             print(f"[INFO] Routes found: {', '.join(sorted(route_list)[:10])}{'...' if len(route_list) > 10 else ''}")
             print(f"[INFO] Vehicle IDs: {', '.join(list(vehicles_dict.keys())[:3])}...")
             return vehicles_dict
+        elif len(vehicle_activities) == 0:
+            # No vehicles in the feed at all - likely off-hours
+            current_hour = datetime.now().hour
+            if current_hour < 6 or current_hour > 23:
+                print(f"[INFO] BODS API returned empty - buses not operating at this hour ({current_hour}:00)")
+            else:
+                print(f"[INFO] BODS API returned empty - no active vehicles in service area")
+            print(f"[INFO] This is normal for real-time APIs during off-peak hours")
+            return {}
         else:
-            print(f"[INFO] ⚠️ BODS API returned empty data (no vehicles operating)")
-            print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+            print(f"[INFO] BODS API returned {len(vehicle_activities)} vehicles but none in Bristol area")
+            print(f"[INFO] Check bounding box or expand search area")
             return {}
         
     except requests.exceptions.RequestException as req_error:
-        print(f"[ERROR] ❌ BODS API request failed: {req_error}")
-        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        print(f"[ERROR] BODS API request failed: {req_error}")
         return {}
     except ET.ParseError as xml_error:
-        print(f"[ERROR] ❌ XML parsing failed: {xml_error}")
-        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        print(f"[ERROR] BODS XML parsing failed: {xml_error}")
         return {}
     except Exception as general_error:
-        print(f"[ERROR] ❌ Unexpected error in vehicle fetch: {general_error}")
-        print(f"[WARNING] ❌ No simulated fallback - returning empty data")
+        print(f"[ERROR] Unexpected error in BODS fetch: {general_error}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 
@@ -461,7 +479,8 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
     api_key = TOMTOM_TRAFFIC_CONFIG["api_key"]
     
     if not api_key or api_key == "":
-        return None  # No API key configured, use fallback
+        print(f"[TOMTOM] No API key configured")
+        return None
     
     try:
         # TomTom Traffic Flow API endpoint
@@ -473,6 +492,8 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
             "unit": "KMPH"  # Speed in km/h
         }
         
+        print(f"[TOMTOM] Fetching traffic for ({latitude:.4f}, {longitude:.4f})")
+        
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
         
@@ -481,6 +502,8 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
         # Extract traffic flow information
         if "flowSegmentData" in data:
             flow_data = data["flowSegmentData"]
+            print(f"[TOMTOM] Got traffic data: {flow_data.get('currentSpeed')} km/h " +
+                  f"(free flow: {flow_data.get('freeFlowSpeed')} km/h)")
             return {
                 "current_speed": flow_data.get("currentSpeed", 0),
                 "free_flow_speed": flow_data.get("freeFlowSpeed", 40),
@@ -489,14 +512,15 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
                 "confidence": flow_data.get("confidence", 0.8),
                 "road_closure": flow_data.get("roadClosure", False)
             }
-        
-        return None
+        else:
+            print(f"[TOMTOM] No flowSegmentData in response")
+            return None
         
     except requests.exceptions.RequestException as e:
         print(f"[WARNING] TomTom API request failed: {e}")
         return None
     except Exception as e:
-        print(f"[ERROR] TomTom API parsing error: {e}")
+        print(f"[ERROR] TomTom API error: {e}")
         return None
 
 
@@ -959,6 +983,261 @@ async def get_route_geometry(route: str = Query("72", description="Route number"
         "waypoints": len(path_coords),
         "coordinates": path_coords
     }
+
+
+# ===========================
+# API TEST ENDPOINTS
+# ===========================
+
+@api.get("/api/test/bods", tags=["Testing"])
+async def test_bods_api():
+    """
+    Test BODS API connectivity and return diagnostic information
+    """
+    import requests
+    import xml.etree.ElementTree as ET
+    
+    results = {
+        "api_key_configured": bool(BODS_CREDENTIALS["api_key"]),
+        "api_key_preview": BODS_CREDENTIALS["api_key"][:10] + "..." if BODS_CREDENTIALS["api_key"] else None,
+        "test_time": datetime.now().isoformat(),
+        "tests": []
+    }
+    
+    # Test 1: Direct API call with expanded bounds
+    try:
+        # Use a larger bounding box for testing
+        test_bounds = {
+            "min_latitude": 51.30,
+            "max_latitude": 51.65,
+            "min_longitude": -2.80,
+            "max_longitude": -2.40
+        }
+        bbox = f"{test_bounds['min_latitude']},{test_bounds['min_longitude']},{test_bounds['max_latitude']},{test_bounds['max_longitude']}"
+        api_url = f"{BODS_CREDENTIALS['siri_endpoint']}?api_key={BODS_CREDENTIALS['api_key']}&boundingBox={bbox}"
+        
+        results["tests"].append({
+            "name": "API URL Construction",
+            "status": "success",
+            "url": api_url.replace(BODS_CREDENTIALS["api_key"], "***")
+        })
+        
+        # Make the request
+        response = requests.get(api_url, timeout=15)
+        
+        results["tests"].append({
+            "name": "HTTP Request",
+            "status": "success" if response.status_code == 200 else "failed",
+            "status_code": response.status_code,
+            "content_length": len(response.content),
+            "content_preview": response.text[:500] if response.text else None
+        })
+        
+        if response.status_code == 200:
+            # Try to parse XML
+            try:
+                root = ET.fromstring(response.content)
+                
+                # Count VehicleActivity elements
+                namespaces = {
+                    'siri': 'http://www.siri.org.uk/siri',
+                    'ns2': 'http://www.ifopt.org.uk/acsb',
+                    'ns3': 'http://www.ifopt.org.uk/ifopt',
+                    'ns4': 'http://datex2.eu/schema/2_0RC1/2_0'
+                }
+                
+                vehicle_activities = root.findall('.//siri:VehicleActivity', namespaces)
+                
+                # Sample a few vehicles
+                sample_vehicles = []
+                for va in vehicle_activities[:3]:
+                    try:
+                        mv = va.find('.//siri:MonitoredVehicleJourney', namespaces)
+                        if mv is not None:
+                            line_ref = mv.find('siri:LineRef', namespaces)
+                            vehicle_ref = mv.find('siri:VehicleRef', namespaces)
+                            location = mv.find('.//siri:VehicleLocation', namespaces)
+                            
+                            if location is not None:
+                                lon_elem = location.find('siri:Longitude', namespaces)
+                                lat_elem = location.find('siri:Latitude', namespaces)
+                                
+                                sample_vehicles.append({
+                                    "route": line_ref.text if line_ref is not None else "Unknown",
+                                    "vehicle_id": vehicle_ref.text if vehicle_ref is not None else "Unknown",
+                                    "lat": lat_elem.text if lat_elem is not None else None,
+                                    "lon": lon_elem.text if lon_elem is not None else None
+                                })
+                    except Exception as e:
+                        pass
+                
+                results["tests"].append({
+                    "name": "XML Parsing",
+                    "status": "success",
+                    "total_vehicles": len(vehicle_activities),
+                    "sample_vehicles": sample_vehicles
+                })
+                
+                # Check Bristol-filtered vehicles
+                bristol_vehicles = []
+                for va in vehicle_activities:
+                    try:
+                        mv = va.find('.//siri:MonitoredVehicleJourney', namespaces)
+                        if mv is not None:
+                            location = mv.find('.//siri:VehicleLocation', namespaces)
+                            if location is not None:
+                                lon_elem = location.find('siri:Longitude', namespaces)
+                                lat_elem = location.find('siri:Latitude', namespaces)
+                                
+                                if lon_elem is not None and lat_elem is not None:
+                                    lon = float(lon_elem.text)
+                                    lat = float(lat_elem.text)
+                                    
+                                    if (BRISTOL_BOUNDS["min_latitude"] <= lat <= BRISTOL_BOUNDS["max_latitude"] and
+                                        BRISTOL_BOUNDS["min_longitude"] <= lon <= BRISTOL_BOUNDS["max_longitude"]):
+                                        line_ref = mv.find('siri:LineRef', namespaces)
+                                        bristol_vehicles.append({
+                                            "route": line_ref.text if line_ref is not None else "Unknown",
+                                            "lat": lat,
+                                            "lon": lon
+                                        })
+                    except:
+                        pass
+                
+                results["tests"].append({
+                    "name": "Bristol Area Filter",
+                    "status": "success",
+                    "vehicles_in_bristol": len(bristol_vehicles),
+                    "sample_bristol_vehicles": bristol_vehicles[:5]
+                })
+                
+            except ET.ParseError as e:
+                results["tests"].append({
+                    "name": "XML Parsing",
+                    "status": "failed",
+                    "error": str(e)
+                })
+        else:
+            results["tests"].append({
+                "name": "HTTP Request",
+                "status": "failed",
+                "error": f"Status code: {response.status_code}",
+                "response_preview": response.text[:500] if response.text else None
+            })
+            
+    except Exception as e:
+        results["tests"].append({
+            "name": "API Connection",
+            "status": "failed",
+            "error": str(e)
+        })
+    
+    return results
+
+
+@api.get("/api/test/tomtom", tags=["Testing"])
+async def test_tomtom_api(
+    lat: float = Query(51.4496, description="Latitude to test"),
+    lon: float = Query(-2.5811, description="Longitude to test")
+):
+    """
+    Test TomTom API connectivity and return diagnostic information
+    """
+    results = {
+        "api_key_configured": bool(TOMTOM_TRAFFIC_CONFIG["api_key"]),
+        "api_key_preview": TOMTOM_TRAFFIC_CONFIG["api_key"][:10] + "..." if TOMTOM_TRAFFIC_CONFIG["api_key"] else None,
+        "test_coordinates": {"lat": lat, "lon": lon},
+        "test_time": datetime.now().isoformat(),
+        "tests": []
+    }
+    
+    try:
+        # Build URL
+        url = f"{TOMTOM_TRAFFIC_CONFIG['base_url']}/{TOMTOM_TRAFFIC_CONFIG['style']}/{TOMTOM_TRAFFIC_CONFIG['zoom']}/json"
+        params = {
+            "key": TOMTOM_TRAFFIC_CONFIG["api_key"],
+            "point": f"{lat},{lon}",
+            "unit": "KMPH"
+        }
+        
+        results["tests"].append({
+            "name": "API URL Construction",
+            "status": "success",
+            "url": url,
+            "params": {k: v if k != "key" else "***" for k, v in params.items()}
+        })
+        
+        # Make request
+        response = requests.get(url, params=params, timeout=10)
+        
+        results["tests"].append({
+            "name": "HTTP Request",
+            "status": "success" if response.status_code == 200 else "failed",
+            "status_code": response.status_code,
+            "content_length": len(response.content)
+        })
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            results["raw_response"] = data
+            
+            if "flowSegmentData" in data:
+                flow_data = data["flowSegmentData"]
+                results["tests"].append({
+                    "name": "Traffic Data Extraction",
+                    "status": "success",
+                    "current_speed": flow_data.get("currentSpeed"),
+                    "free_flow_speed": flow_data.get("freeFlowSpeed"),
+                    "confidence": flow_data.get("confidence"),
+                    "road_closure": flow_data.get("roadClosure", False)
+                })
+                
+                # Calculate delay
+                current_speed = flow_data.get("currentSpeed", 0)
+                free_flow_speed = flow_data.get("freeFlowSpeed", 40)
+                speed_ratio = current_speed / free_flow_speed if free_flow_speed > 0 else 1.0
+                
+                if speed_ratio >= 0.9:
+                    delay = 0
+                elif speed_ratio >= 0.7:
+                    delay = (1 - speed_ratio) * 10
+                elif speed_ratio >= 0.5:
+                    delay = 2 + (0.7 - speed_ratio) * 20
+                elif speed_ratio >= 0.3:
+                    delay = 6 + (0.5 - speed_ratio) * 30
+                else:
+                    delay = 12 + (0.3 - speed_ratio) * 40
+                
+                results["tests"].append({
+                    "name": "Delay Calculation",
+                    "status": "success",
+                    "speed_ratio": round(speed_ratio, 2),
+                    "calculated_delay_minutes": round(delay, 1)
+                })
+            else:
+                results["tests"].append({
+                    "name": "Traffic Data Extraction",
+                    "status": "failed",
+                    "error": "flowSegmentData not found in response",
+                    "available_keys": list(data.keys())
+                })
+        else:
+            results["tests"].append({
+                "name": "HTTP Request",
+                "status": "failed",
+                "error": f"Status code: {response.status_code}",
+                "response_text": response.text[:500]
+            })
+            
+    except Exception as e:
+        results["tests"].append({
+            "name": "API Connection",
+            "status": "failed",
+            "error": str(e)
+        })
+    
+    return results
 
 
 # ===========================
