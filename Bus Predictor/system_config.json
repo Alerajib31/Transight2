@@ -1,0 +1,17 @@
+{
+  "system_configuration": {
+    "api_server_url": "http://localhost:8000/api",
+    "data_refresh_interval": 5,
+    "frame_processing_interval": 2,
+    "visualization_window_width": 800
+  },
+  "detection_parameters": {
+    "confidence_threshold": 0.45,
+    "person_class_id": 0,
+    "exclusion_zone_percent": 0.40
+  },
+  "transit_stations": {
+    "note": "Stations are managed by the backend server",
+    "stations_loaded_dynamically": true
+  }
+}
