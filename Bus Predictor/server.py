@@ -245,6 +245,8 @@ data_cache = {
 
 vehicle_movement_log = defaultdict(list)
 sensor_data_registry = {}
+tomtom_cache = {}  # key: "lat_lon" rounded to 3 decimals, value: {"data": ..., "timestamp": ...}
+TOMTOM_CACHE_TTL = 300  # 5 minutes
 ml_predictor = None
 MODEL_FILE_PATH = "trained_model.json"
 
@@ -470,41 +472,52 @@ def fetch_live_vehicle_positions() -> Dict[str, Any]:
 def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
     """
     Fetch real-time traffic data from TomTom Traffic Flow API
-    
+
     API Documentation: https://developer.tomtom.com/traffic-api/documentation
     Free Tier: 2,500 requests/day, no credit card required
-    
+
     Returns traffic flow data including current speed and free-flow speed
+    Uses in-memory cache (5-min TTL, ~111m spatial precision) to conserve API quota
     """
     api_key = TOMTOM_TRAFFIC_CONFIG["api_key"]
-    
+
     if not api_key or api_key == "":
         print(f"[TOMTOM] No API key configured")
         return None
-    
+
+    # Check cache first (round to 3 decimal places = ~111m precision)
+    cache_key = f"{round(latitude, 3)}_{round(longitude, 3)}"
+    current_time = time.time()
+
+    if cache_key in tomtom_cache:
+        cached = tomtom_cache[cache_key]
+        if current_time - cached["timestamp"] < TOMTOM_CACHE_TTL:
+            print(f"[TOMTOM] Cache hit for ({latitude:.4f}, {longitude:.4f})")
+            return cached["data"]
+
     try:
         # TomTom Traffic Flow API endpoint
         url = f"{TOMTOM_TRAFFIC_CONFIG['base_url']}/{TOMTOM_TRAFFIC_CONFIG['style']}/{TOMTOM_TRAFFIC_CONFIG['zoom']}/json"
-        
+
         params = {
             "key": api_key,
             "point": f"{latitude},{longitude}",
             "unit": "KMPH"  # Speed in km/h
         }
-        
+
         print(f"[TOMTOM] Fetching traffic for ({latitude:.4f}, {longitude:.4f})")
-        
+
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
-        
+
         data = response.json()
-        
+
         # Extract traffic flow information
         if "flowSegmentData" in data:
             flow_data = data["flowSegmentData"]
             print(f"[TOMTOM] Got traffic data: {flow_data.get('currentSpeed')} km/h " +
                   f"(free flow: {flow_data.get('freeFlowSpeed')} km/h)")
-            return {
+            result = {
                 "current_speed": flow_data.get("currentSpeed", 0),
                 "free_flow_speed": flow_data.get("freeFlowSpeed", 40),
                 "current_travel_time": flow_data.get("currentTravelTime", 0),
@@ -512,12 +525,17 @@ def fetch_tomtom_traffic_data(latitude: float, longitude: float) -> Optional[Dic
                 "confidence": flow_data.get("confidence", 0.8),
                 "road_closure": flow_data.get("roadClosure", False)
             }
+            tomtom_cache[cache_key] = {"data": result, "timestamp": current_time}
+            return result
         else:
             print(f"[TOMTOM] No flowSegmentData in response")
+            tomtom_cache[cache_key] = {"data": None, "timestamp": current_time}
             return None
-        
+
     except requests.exceptions.RequestException as e:
         print(f"[WARNING] TomTom API request failed: {e}")
+        # Cache failures to avoid hammering a broken API
+        tomtom_cache[cache_key] = {"data": None, "timestamp": current_time}
         return None
     except Exception as e:
         print(f"[ERROR] TomTom API error: {e}")
@@ -748,8 +766,14 @@ async def find_nearby_stations(
     Find stations within specified radius of coordinates
     """
     nearby_stations = []
-    
-    for station_id, station_info in TRANSIT_STATIONS.items():
+
+    # Include dynamic stations from live vehicle data
+    all_stations = dict(TRANSIT_STATIONS)
+    if data_cache["vehicles"]["content"]:
+        dynamic_stops = extract_dynamic_stops_from_vehicles(data_cache["vehicles"]["content"])
+        all_stations.update(dynamic_stops)
+
+    for station_id, station_info in all_stations.items():
         distance = calculate_geo_distance(
             lon, lat,
             station_info["position"]["lon"],
@@ -787,10 +811,16 @@ async def get_approaching_vehicles(station_id: str):
     2. Real-time traffic conditions from TomTom Traffic API
     3. Passenger density from CV sensors (YOLOv8)
     """
-    if station_id not in TRANSIT_STATIONS:
+    # Build combined station lookup (static + dynamic from live vehicles)
+    all_known_stations = dict(TRANSIT_STATIONS)
+    if data_cache["vehicles"]["content"]:
+        dynamic_stops = extract_dynamic_stops_from_vehicles(data_cache["vehicles"]["content"])
+        all_known_stations.update(dynamic_stops)
+
+    if station_id not in all_known_stations:
         raise HTTPException(status_code=404, detail=f"Station {station_id} not found")
-    
-    station_info = TRANSIT_STATIONS[station_id]
+
+    station_info = all_known_stations[station_id]
     station_lat = station_info["position"]["lat"]
     station_lon = station_info["position"]["lon"]
     
@@ -894,6 +924,12 @@ async def get_approaching_vehicles(station_id: str):
             "passenger_count": "CV Sensor (YOLOv8)" if crowd_count > 0 else "CV Sensor (YOLOv8) - No data",
             "ml_model": "XGBoost (trained)" if ml_predictor else "Heuristic (fallback)"
         },
+        "traffic_api_status": {
+            "working": traffic_success_count > 0,
+            "vehicles_with_traffic_data": traffic_success_count,
+            "total_approaching": len(approaching_vehicles),
+            "message": "Traffic data available" if traffic_success_count > 0 else "TomTom API unavailable - traffic delays not reflected in ETAs"
+        },
         "vehicles": approaching_vehicles
     }
 
@@ -925,10 +961,17 @@ async def get_all_active_vehicles():
             "last_update": vehicle_data["last_updated"]
         })
     
+    current_hour = datetime.now().hour
     return {
         "timestamp": datetime.now().isoformat(),
         "total_vehicles": len(vehicles_list),
-        "vehicles": vehicles_list
+        "vehicles": vehicles_list,
+        "cache_age_seconds": round(time.time() - data_cache["vehicles"]["last_updated"]) if data_cache["vehicles"]["last_updated"] > 0 else None,
+        "status": "live_data" if len(vehicles_list) > 0 else "no_vehicles",
+        "message": None if len(vehicles_list) > 0 else (
+            "Buses may not be in service at this hour" if current_hour < 6 or current_hour > 23
+            else "No vehicles currently detected in the Bristol area"
+        )
     }
 
 

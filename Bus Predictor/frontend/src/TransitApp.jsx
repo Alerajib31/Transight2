@@ -305,6 +305,7 @@ function BristolTransitApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [availableStations, setAvailableStations] = useState([]);
+  const [trafficApiStatus, setTrafficApiStatus] = useState(null);
   
   const SERVER_BASE_URL = "http://127.0.0.1:8000/api";
   
@@ -329,9 +330,7 @@ function BristolTransitApp() {
   useEffect(() => {
     const loadStations = async () => {
       try {
-        const response = await axios.get(`${SERVER_BASE_URL}/stations`, {
-          params: { route: '72' }
-        });
+        const response = await axios.get(`${SERVER_BASE_URL}/stations`);
         setAvailableStations(response.data.stations || []);
       } catch (error) {
         console.error("Failed to load stations:", error);
@@ -351,6 +350,7 @@ function BristolTransitApp() {
       );
       
       setStationVehicles(response.data.vehicles || []);
+      setTrafficApiStatus(response.data.traffic_api_status || null);
       setLastRefreshTime(new Date());
     } catch (error) {
       console.error("Failed to fetch vehicles:", error);
@@ -362,7 +362,7 @@ function BristolTransitApp() {
   
   // Auto-refresh vehicle data
   useEffect(() => {
-    if (!activeStation || displayMode !=='vehicles') return;
+    if (!activeStation || displayMode === 'stations') return;
     
     fetchApproachingVehicles(activeStation);
     const refreshInterval = setInterval(() => {
@@ -445,7 +445,7 @@ function BristolTransitApp() {
             >
               <Typography variant="h5" fontWeight={900}>Bristol Transit Intelligence</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Route 72: Temple Meads ↔ UWE Frenchay
+                Routes 72, N1, N86 - Live Bus Tracking
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.8 }}>
                 Select a stop to view real-time bus arrivals
@@ -576,7 +576,15 @@ function BristolTransitApp() {
                 <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
                   Approaching Buses ({stationVehicles.length})
                 </Typography>
-                
+
+                {trafficApiStatus && !trafficApiStatus.working && stationVehicles.length > 0 && (
+                  <Paper sx={{ p: 1.5, mb: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
+                    <Typography variant="caption" color="warning.main">
+                      Traffic data unavailable - ETAs may not reflect current road conditions
+                    </Typography>
+                  </Paper>
+                )}
+
                 {isLoading && stationVehicles.length === 0 ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                     <CircularProgress />
@@ -585,10 +593,12 @@ function BristolTransitApp() {
                   <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f9fafb' }}>
                     <DirectionsBusIcon sx={{ fontSize: 48, color: '#9ca3af', mb: 1 }} />
                     <Typography color="text.secondary">
-                      No buses nearby at the moment
+                      No buses detected nearby
                     </Typography>
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                      Real-time data from BODS API
+                      {new Date().getHours() < 6 || new Date().getHours() > 23
+                        ? 'Buses are not in service at this hour (service: 06:00-23:00)'
+                        : 'Live data from BODS API - buses may be out of range'}
                     </Typography>
                   </Paper>
                 ) : (
