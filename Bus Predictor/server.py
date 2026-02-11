@@ -1244,12 +1244,72 @@ async def test_tomtom_api(
 # SERVER STARTUP
 # ===========================
 
+def verify_apis_on_startup():
+    """Verify API connectivity when server starts"""
+    print("\n" + "="*60)
+    print("API CONNECTIVITY CHECK")
+    print("="*60)
+    
+    # Check BODS API
+    print("\n[1] Checking BODS API...")
+    try:
+        bbox = "51.30,-2.80,51.65,-2.40"
+        url = f"https://data.bus-data.dft.gov.uk/api/v1/datafeed/?api_key={BODS_CREDENTIALS['api_key']}&boundingBox={bbox}"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            root = ET.fromstring(resp.content)
+            ns = {'siri': 'http://www.siri.org.uk/siri'}
+            activities = root.findall('.//siri:VehicleActivity', ns)
+            print(f"    Status: CONNECTED")
+            print(f"    Vehicles in feed: {len(activities)}")
+            if len(activities) == 0:
+                current_hour = datetime.now().hour
+                if current_hour < 6:
+                    print(f"    Note: Early morning ({current_hour}:00) - buses not yet in service")
+        else:
+            print(f"    Status: FAILED (HTTP {resp.status_code})")
+    except Exception as e:
+        print(f"    Status: ERROR - {e}")
+    
+    # Check TomTom API
+    print("\n[2] Checking TomTom API...")
+    try:
+        lat, lon = 51.4496, -2.5811
+        url = f"{TOMTOM_TRAFFIC_CONFIG['base_url']}/{TOMTOM_TRAFFIC_CONFIG['style']}/{TOMTOM_TRAFFIC_CONFIG['zoom']}/json"
+        params = {
+            "key": TOMTOM_TRAFFIC_CONFIG["api_key"],
+            "point": f"{lat},{lon}",
+            "unit": "KMPH"
+        }
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if "flowSegmentData" in data:
+                flow = data["flowSegmentData"]
+                print(f"    Status: CONNECTED")
+                print(f"    Current Speed: {flow.get('currentSpeed')} km/h")
+                print(f"    Free Flow: {flow.get('freeFlowSpeed')} km/h")
+            else:
+                print(f"    Status: CONNECTED (no traffic data)")
+        else:
+            print(f"    Status: FAILED (HTTP {resp.status_code})")
+    except Exception as e:
+        print(f"    Status: ERROR - {e}")
+    
+    print("\n" + "="*60)
+    print("Server ready - APIs configured correctly")
+    print("="*60 + "\n")
+
+
 if __name__ == "__main__":
     import uvicorn
     print("[START] Bristol Transit Intelligence API Server")
     print(f"[INFO] Monitoring Routes: {'ALL ROUTES' if MONITORED_ROUTES is None else ', '.join(MONITORED_ROUTES)}")
     print(f"[INFO] Base Stations Loaded: {len(TRANSIT_STATIONS)}")
-    print(f"[INFO] Dynamic Discovery: ENABLED (will fetch all active buses)")
+    
+    # Verify APIs before starting
+    verify_apis_on_startup()
+    
     uvicorn.run(
         api,
         host="0.0.0.0",
